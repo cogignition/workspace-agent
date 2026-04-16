@@ -11,7 +11,12 @@ final class AppState {
 
     // MARK: - Inference Engine
     var engineStatus: EngineStatus = .idle
-    var modelName: String = "gemma-4-12b"
+
+    /// Derived from modelPath — shows just the filename in the menu bar footer.
+    var modelName: String {
+        let name = URL(fileURLWithPath: modelPath).deletingPathExtension().lastPathComponent
+        return name.isEmpty ? "No model set" : name
+    }
 
     // MARK: - Email Triage
     var emails: [Email] = []
