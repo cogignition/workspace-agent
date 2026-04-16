@@ -53,8 +53,14 @@ actor GWSService {
             let stdoutPipe = Pipe()
             let stderrPipe = Pipe()
 
-            process.executableURL = URL(fileURLWithPath: gwsPath)
-            process.arguments = arguments
+            // Run via login shell so the full user PATH is available.
+            // When launched from an app bundle, macOS strips PATH — Node.js
+            // (required by gws) won't be found without this.
+            let shellCommand = ([gwsPath] + arguments)
+                .map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+                .joined(separator: " ")
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = ["-l", "-c", shellCommand]
             process.standardOutput = stdoutPipe
             process.standardError = stderrPipe
             process.environment = ProcessInfo.processInfo.environment

@@ -61,9 +61,60 @@ struct TriageParsingTests {
         }
     }
 
-    @Test func throwsOnWrongSchema() {
+    /// Completely unrelated JSON now returns a graceful empty result instead of throwing,
+    /// so the pipeline can surface a "no emails ranked" digest rather than a hard error.
+    @Test func wrongSchemaReturnsEmptyResult() throws {
+        let result = try EmailTriageService.testParseTriageResult(#"{"foo": "bar"}"#)
+        #expect(result.rankedEmails.isEmpty)
+        #expect(result.summary == "")
+    }
+
+    /// Truly unparseable input (not JSON at all) still throws.
+    @Test func throwsOnCompletelyInvalidInput() {
         #expect(throws: (any Error).self) {
-            try EmailTriageService.testParseTriageResult(#"{"foo": "bar"}"#)
+            try EmailTriageService.testParseTriageResult("not json at all")
         }
+    }
+
+    // MARK: - Resilience tests
+
+    @Test func acceptsUnknownSuggestedAction() throws {
+        let json = """
+        {
+          "rankedEmails": [
+            { "emailId": "r1", "priority": 2, "reason": "Needs attention.", "suggestedAction": "read_later" }
+          ],
+          "summary": "One item."
+        }
+        """
+        let result = try EmailTriageService.testParseTriageResult(json)
+        #expect(result.rankedEmails[0].suggestedAction == .unknown)
+    }
+
+    @Test func acceptsPriorityAsDouble() throws {
+        let json = """
+        {
+          "rankedEmails": [
+            { "emailId": "r2", "priority": 3.0, "reason": "Normal.", "suggestedAction": "fyi" }
+          ],
+          "summary": "All good."
+        }
+        """
+        let result = try EmailTriageService.testParseTriageResult(json)
+        #expect(result.rankedEmails[0].priority == 3)
+    }
+
+    @Test func acceptsAlternateEmailsKey() throws {
+        let json = """
+        {
+          "emails": [
+            { "emailId": "r3", "priority": 1, "reason": "Urgent.", "suggestedAction": "reply_now" }
+          ],
+          "summary": "One urgent."
+        }
+        """
+        let result = try EmailTriageService.testParseTriageResult(json)
+        #expect(result.rankedEmails.count == 1)
+        #expect(result.rankedEmails[0].emailId == "r3")
     }
 }
