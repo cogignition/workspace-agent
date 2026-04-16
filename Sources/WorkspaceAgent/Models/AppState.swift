@@ -40,6 +40,12 @@ final class AppState {
     var modelUnloadTimeout: TimeInterval = 300 {
         didSet { UserDefaults.standard.set(modelUnloadTimeout, forKey: "modelUnloadTimeout") }
     }
+    /// Context window size (tokens) passed to llama.cpp at model load.
+    /// Larger values allow longer email batches but use proportionally more RAM.
+    /// Gemma 3 supports up to 128K; practical range for email triage: 4096–32768.
+    var contextSize: Int = 8192 {
+        didSet { UserDefaults.standard.set(contextSize, forKey: "contextSize") }
+    }
 
     // MARK: - Errors
     var lastError: String?
@@ -63,6 +69,9 @@ final class AppState {
         }
         if defaults.object(forKey: "modelUnloadTimeout") != nil {
             modelUnloadTimeout = defaults.double(forKey: "modelUnloadTimeout")
+        }
+        if defaults.object(forKey: "contextSize") != nil {
+            contextSize = defaults.integer(forKey: "contextSize")
         }
 
         // Wire up long-lived services
