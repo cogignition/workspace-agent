@@ -11,29 +11,28 @@ actor GWSService {
 
     // MARK: - Gmail
 
-    /// Fetch recent email metadata via `gws gmail messages list`.
-    /// Returns parsed Email objects from the JSON output.
-    func fetchRecentEmails(maxResults: Int = 50, query: String = "is:inbox") async throws -> [Email] {
+    /// Fetch recent email metadata via `gws gmail +triage --format json`.
+    /// Returns parsed Email objects. Uses the +triage helper which fetches
+    /// id, from, subject, date in a single efficient call.
+    func fetchRecentEmails(maxResults: Int = 50, query: String = "is:unread") async throws -> [Email] {
         let args = [
-            "gmail", "messages", "list",
-            "--format", "json",
-            "--max-results", "\(maxResults)",
-            "--query", query
+            "gmail", "+triage",
+            "--max", "\(maxResults)",
+            "--query", query,
+            "--format", "json"
         ]
 
         let output = try await run(arguments: args)
-        let emails = try parseEmails(from: output)
-        return emails
+        return try parseEmails(from: output)
     }
 
     /// Fetch the full body of a specific email (for deeper triage if needed).
     func fetchEmailBody(messageId: String) async throws -> String {
         let args = [
-            "gmail", "messages", "get",
+            "gmail", "+read",
             "--format", "json",
-            "--message-id", messageId
+            messageId
         ]
-
         return try await run(arguments: args)
     }
 
@@ -41,7 +40,7 @@ actor GWSService {
 
     /// Verify gws is installed and authenticated.
     func healthCheck() async throws -> Bool {
-        let args = ["version"]
+        let args = ["gmail", "+triage", "--max", "1", "--format", "json"]
         let output = try await run(arguments: args)
         return !output.isEmpty
     }
@@ -72,8 +71,6 @@ actor GWSService {
                         exitCode: process.terminationStatus,
                         output: errText
                     ))
-                } else if output.isEmpty && stdoutData.isEmpty {
-                    continuation.resume(throwing: GWSError.invalidOutput)
                 } else {
                     continuation.resume(returning: output)
                 }
@@ -89,47 +86,41 @@ actor GWSService {
 
     // MARK: - Parsing
 
-    /// Parse the JSON output from `gws gmail messages list` into Email structs.
-    /// The gws CLI outputs a JSON array of message metadata.
-    private func parseEmails(from jsonString: String) throws -> [Email] {
-        guard let data = jsonString.data(using: .utf8) else {
+    /// Parse the JSON output from `gws gmail +triage --format json` into Email structs.
+    /// Output format: { "messages": [...], "query": "...", "resultSizeEstimate": N }
+    func parseEmails(from jsonString: String) throws -> [Email] {
+        // Strip any leading log lines (gws emits "Using keyring backend: keyring" to stdout)
+        // Find the first JSON start character — either '{' (object) or '[' (array)
+        let objStart = jsonString.firstIndex(of: "{")
+        let arrStart = jsonString.firstIndex(of: "[")
+        let jsonStart: String.Index
+        switch (objStart, arrStart) {
+        case (.some(let o), .some(let a)): jsonStart = min(o, a)
+        case (.some(let o), nil):          jsonStart = o
+        case (nil, .some(let a)):          jsonStart = a
+        case (nil, nil):                   jsonStart = jsonString.startIndex
+        }
+        let cleaned = String(jsonString[jsonStart...])
+
+        guard let data = cleaned.data(using: .utf8) else {
             throw GWSError.invalidOutput
         }
 
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .custom { decoder in
-            let container = try decoder.singleValueContainer()
-            let dateString = try container.decode(String.self)
 
-            // gws outputs RFC 3339 dates
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = formatter.date(from: dateString) {
-                return date
-            }
-            // Fallback: try without fractional seconds
-            formatter.formatOptions = [.withInternetDateTime]
-            if let date = formatter.date(from: dateString) {
-                return date
-            }
-            throw DecodingError.dataCorruptedError(
-                in: container,
-                debugDescription: "Cannot decode date: \(dateString)"
-            )
+        // +triage returns { "messages": [...], ... }
+        struct TriageResponse: Decodable {
+            let messages: [Email]
         }
 
-        // gws may return { "messages": [...] } or a bare array depending on version
-        if let wrapper = try? decoder.decode(GWSMessageListResponse.self, from: data) {
+        if let wrapper = try? decoder.decode(TriageResponse.self, from: data) {
             return wrapper.messages
         }
+        // Fallback: bare array
         return try decoder.decode([Email].self, from: data)
     }
 
     // MARK: - Types
-
-    private struct GWSMessageListResponse: Codable {
-        let messages: [Email]
-    }
 
     enum GWSError: LocalizedError {
         case invalidOutput

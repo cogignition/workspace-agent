@@ -11,9 +11,10 @@ struct EmailRowView: View {
                     .font(.subheadline.bold())
                     .lineLimit(1)
                 Spacer()
-                Text(email.date, style: .relative)
+                Text(email.date)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                    .lineLimit(1)
             }
 
             Text(email.subject)

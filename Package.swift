@@ -23,5 +23,13 @@ let package = Package(
                 .interoperabilityMode(.Cxx)
             ]
         ),
+        .testTarget(
+            name: "WorkspaceAgentTests",
+            dependencies: ["WorkspaceAgent"],
+            path: "Tests/WorkspaceAgentTests",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx)
+            ]
+        ),
     ]
 )

@@ -163,19 +163,16 @@ final class EmailTriageService {
             let id: String
             let from: String
             let subject: String
-            let snippet: String
             let date: String
             let isUnread: Bool
         }
 
-        let formatter = ISO8601DateFormatter()
         let promptEmails = emails.map { email in
             PromptEmail(
                 id: email.id,
                 from: email.from,
                 subject: email.subject,
-                snippet: email.snippet,
-                date: formatter.string(from: email.date),
+                date: email.date,
                 isUnread: email.isUnread
             )
         }

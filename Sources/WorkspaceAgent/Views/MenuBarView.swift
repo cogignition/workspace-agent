@@ -20,6 +20,22 @@ struct MenuBarView: View {
 
             Divider()
 
+            // Error banner
+            if let error = appState.lastError {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(8)
+                .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            }
+
             // Quick status
             if let digest = appState.digest {
                 VStack(alignment: .leading, spacing: 6) {
@@ -32,7 +48,7 @@ struct MenuBarView: View {
                         StatBadge(count: digest.canWait.count, label: "Later", color: .green)
                     }
                 }
-            } else {
+            } else if appState.lastError == nil {
                 Text("No digest yet. Run your first triage below.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
