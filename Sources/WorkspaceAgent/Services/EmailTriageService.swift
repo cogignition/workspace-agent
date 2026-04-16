@@ -64,7 +64,8 @@ final class EmailTriageService {
                 || engineContext != appState.contextSize
             if needsLoad {
                 let reason = appState.engineStatus.isReady ? " (settings changed — reloading)" : ""
-                appLog("Loading model\(reason)…", level: .info, appState)
+                let modelName = URL(fileURLWithPath: appState.modelPath).lastPathComponent
+                appLog("Loading model\(reason): \(modelName) (ctx \(appState.contextSize) tokens)…", level: .info, appState)
                 appState.engineStatus = .loading
                 do {
                     try await engine.loadModel(at: appState.modelPath, contextSize: appState.contextSize)
