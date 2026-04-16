@@ -55,9 +55,16 @@ final class EmailTriageService {
                 ? Self.triageUserPrompt(emailCount: emails.count, emailsJSON: emailsJSON)
                 : appState.triagePromptOverride.replacingOccurrences(of: "{emails_json}", with: emailsJSON)
 
-            // Step 3: Load model if needed, then run inference
-            if !appState.engineStatus.isReady {
-                appLog("Loading model…", level: .info, appState)
+            // Step 3: Load model if needed, or reload if path/context changed
+            let engineLoaded = await engine.isLoaded
+            let enginePath = await engine.loadedModelPath
+            let engineContext = await engine.loadedContextSize
+            let needsLoad = !engineLoaded
+                || enginePath != appState.modelPath
+                || engineContext != appState.contextSize
+            if needsLoad {
+                let reason = appState.engineStatus.isReady ? " (settings changed — reloading)" : ""
+                appLog("Loading model\(reason)…", level: .info, appState)
                 appState.engineStatus = .loading
                 do {
                     try await engine.loadModel(at: appState.modelPath, contextSize: appState.contextSize)
