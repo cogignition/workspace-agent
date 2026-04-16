@@ -17,6 +17,11 @@ actor InferenceEngine {
     private var unloadTask: Task<Void, Never>?
     private(set) var isLoaded: Bool = false
 
+    /// The path and context size the current client was loaded with.
+    /// Used to detect settings changes that require a reload.
+    private(set) var loadedModelPath: String?
+    private(set) var loadedContextSize: Int = 0
+
     // MARK: - Lifecycle
 
     /// Load the GGUF model from disk into memory.
@@ -26,10 +31,16 @@ actor InferenceEngine {
         unloadTask?.cancel()
         unloadTask = nil
 
-        // Skip if already loaded
-        if client != nil {
+        // Skip if already loaded with the same settings
+        if client != nil, loadedModelPath == path, loadedContextSize == contextSize {
             isLoaded = true
             return
+        }
+
+        // Settings changed — unload existing model before reloading
+        if client != nil {
+            client = nil
+            isLoaded = false
         }
 
         let modelURL = URL(fileURLWithPath: path)
@@ -49,6 +60,8 @@ actor InferenceEngine {
                 )
             )
             self.client = AnyLLMClient(llmClient)
+            self.loadedModelPath = path
+            self.loadedContextSize = contextSize
             isLoaded = true
         } catch {
             isLoaded = false
@@ -62,6 +75,8 @@ actor InferenceEngine {
         unloadTask = nil
         client = nil
         isLoaded = false
+        loadedModelPath = nil
+        loadedContextSize = 0
     }
 
     // MARK: - Inference
