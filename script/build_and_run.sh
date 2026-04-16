@@ -1,26 +1,23 @@
 #!/bin/bash
-# build_and_run.sh — Shell-first build loop for WorkspaceAgent
-# Following the Codex macOS use-case pattern: compile, bundle, launch, log.
+# build_and_run.sh — Build, bundle, and relaunch WorkspaceAgent.
 #
-# Usage:
-#   ./script/build_and_run.sh          # Build and run (debug)
-#   ./script/build_and_run.sh release  # Build release config
-#   ./script/build_and_run.sh clean    # Clean build artifacts
+# Usage (from project root):
+#   ./script/build_and_run.sh           # debug build + relaunch
+#   ./script/build_and_run.sh release   # optimised build + relaunch
+#   ./script/build_and_run.sh clean     # wipe build artifacts
 
 set -euo pipefail
 
 APP_NAME="WorkspaceAgent"
-BUILD_DIR=".build"
-BUNDLE_DIR="${BUILD_DIR}/bundle"
-CONFIG="${1:-debug}"
-
 cd "$(dirname "$0")/.."
+
+CONFIG="${1:-debug}"
 
 case "$CONFIG" in
     clean)
-        echo "🧹 Cleaning build artifacts…"
+        echo "🧹 Cleaning…"
         swift package clean
-        rm -rf "$BUNDLE_DIR"
+        rm -rf "${APP_NAME}.app"
         echo "✅ Clean complete."
         exit 0
         ;;
@@ -32,77 +29,50 @@ case "$CONFIG" in
         ;;
 esac
 
-echo "🔨 Building ${APP_NAME} (${SWIFT_CONFIG})…"
-swift build -c "$SWIFT_CONFIG" 2>&1
+# ── 1. Build ──────────────────────────────────────────────────────────────────
+echo "🔨 Building (${SWIFT_CONFIG})…"
+swift build -c "$SWIFT_CONFIG"
 
-EXECUTABLE="${BUILD_DIR}/${SWIFT_CONFIG}/${APP_NAME}"
-
+EXECUTABLE=".build/${SWIFT_CONFIG}/${APP_NAME}"
 if [ ! -f "$EXECUTABLE" ]; then
-    echo "❌ Build failed — executable not found at ${EXECUTABLE}"
+    echo "❌ Executable not found: ${EXECUTABLE}"
     exit 1
 fi
-
 echo "✅ Build succeeded."
 
-# Bundle as .app for proper macOS integration (Dock icon, MenuBarExtra, etc.)
-echo "📦 Bundling as ${APP_NAME}.app…"
-
-APP_BUNDLE="${BUNDLE_DIR}/${APP_NAME}.app"
-CONTENTS="${APP_BUNDLE}/Contents"
-MACOS="${CONTENTS}/MacOS"
-
-rm -rf "$APP_BUNDLE"
+# ── 2. Bundle ─────────────────────────────────────────────────────────────────
+MACOS="${APP_NAME}.app/Contents/MacOS"
 mkdir -p "$MACOS"
-
 cp "$EXECUTABLE" "$MACOS/${APP_NAME}"
 
-# Copy llama.framework next to the binary (rpath is @executable_path)
-LLAMA_XCFRAMEWORK="${BUILD_DIR}/artifacts/localllmclient/LocalLLMClientLlamaFramework/llama.xcframework"
-LLAMA_MACOS="${LLAMA_XCFRAMEWORK}/macos-arm64_x86_64/llama.framework"
-if [ -d "$LLAMA_MACOS" ]; then
-    cp -R "$LLAMA_MACOS" "$MACOS/llama.framework"
-    echo "✅ Bundled llama.framework"
+LLAMA_FW=$(find .build/artifacts -name "llama.framework" -path "*/macos-arm64*" 2>/dev/null | head -1)
+if [ -n "$LLAMA_FW" ]; then
+    cp -R "$LLAMA_FW" "$MACOS/"
+    echo "✅ llama.framework bundled."
 else
-    echo "⚠️  llama.framework not found at ${LLAMA_MACOS}"
+    echo "⚠️  llama.framework not found — inference will fail."
 fi
 
-cat > "${CONTENTS}/Info.plist" <<PLIST
+cat > "${APP_NAME}.app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleExecutable</key>
-    <string>${APP_NAME}</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.openlane.workspace-agent</string>
-    <key>CFBundleName</key>
-    <string>Workspace Agent</string>
-    <key>CFBundleVersion</key>
-    <string>0.1.0</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSHumanReadableCopyright</key>
-    <string>Openlane — Internal Tool</string>
-    <key>com.apple.developer.kernel.increased-memory-limit</key>
-    <true/>
-</dict>
-</plist>
+<plist version="1.0"><dict>
+    <key>CFBundleExecutable</key><string>${APP_NAME}</string>
+    <key>CFBundleIdentifier</key><string>com.openlane.workspace-agent</string>
+    <key>CFBundleName</key><string>Workspace Agent</string>
+    <key>CFBundleVersion</key><string>0.2.0</string>
+    <key>CFBundleShortVersionString</key><string>0.2.0</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>LSUIElement</key><true/>
+    <key>NSHumanReadableCopyright</key><string>Openlane — Internal Tool</string>
+</dict></plist>
 PLIST
 
-echo "✅ Bundle created at ${APP_BUNDLE}"
+echo "✅ Bundle ready: ${APP_NAME}.app"
 
-# Kill any existing instance
+# ── 3. Relaunch ───────────────────────────────────────────────────────────────
+echo "🔄 Restarting…"
 pkill -f "${APP_NAME}.app/Contents/MacOS/${APP_NAME}" 2>/dev/null || true
 sleep 0.5
-
-# Launch
-echo "🚀 Launching ${APP_NAME}…"
-open "$APP_BUNDLE"
-
-# Stream logs
-echo "📋 Streaming logs (Ctrl+C to stop)…"
-log stream --predicate "subsystem == 'com.openlane.workspace-agent'" --level debug
+open "${APP_NAME}.app"
+echo "🚀 ${APP_NAME} running."
