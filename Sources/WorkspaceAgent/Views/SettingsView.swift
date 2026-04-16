@@ -96,13 +96,36 @@ struct SettingsView: View {
                 Section("Custom Triage Prompt") {
                     TextEditor(text: $state.triagePromptOverride)
                         .font(.system(.body, design: .monospaced))
-                        .frame(height: 120)
+                        .frame(height: 150)
                         .border(.quaternary)
+                        .onAppear {
+                            if state.triagePromptOverride.isEmpty {
+                                state.triagePromptOverride = EmailTriageService.defaultUserPromptTemplate
+                            }
+                        }
 
-                    Text("Leave empty to use the default prompt. Use {emails_json} as the placeholder for email data.")
+                    // Warning if {emails_json} placeholder is missing
+                    if !state.triagePromptOverride.contains("{emails_json}") {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .font(.caption)
+                            Text("Missing {emails_json} — the app will fall back to the default prompt.")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+
+                    HStack {
+                        Text("Use {emails_json} where you want the email batch inserted.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Reset to Default") {
+                            state.triagePromptOverride = EmailTriageService.defaultUserPromptTemplate
+                        }
                         .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             .formStyle(.grouped)

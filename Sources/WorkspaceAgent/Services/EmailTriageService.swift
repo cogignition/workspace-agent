@@ -51,9 +51,16 @@ final class EmailTriageService {
             // Step 2: Build the prompt
             let emailsJSON = try formatEmailsForPrompt(emails)
             let systemPrompt = Self.triageSystemPrompt
-            let userPrompt = appState.triagePromptOverride.isEmpty
-                ? Self.triageUserPrompt(emailCount: emails.count, emailsJSON: emailsJSON)
-                : appState.triagePromptOverride.replacingOccurrences(of: "{emails_json}", with: emailsJSON)
+            let userPrompt: String
+            if appState.triagePromptOverride.isEmpty {
+                userPrompt = Self.triageUserPrompt(emailCount: emails.count, emailsJSON: emailsJSON)
+            } else if !appState.triagePromptOverride.contains("{emails_json}") {
+                appLog("⚠️ Custom prompt is missing {emails_json} — falling back to default prompt.", level: .warning, appState)
+                userPrompt = Self.triageUserPrompt(emailCount: emails.count, emailsJSON: emailsJSON)
+            } else {
+                userPrompt = appState.triagePromptOverride
+                    .replacingOccurrences(of: "{emails_json}", with: emailsJSON)
+            }
 
             // Step 3: Load model if needed, or reload if path/context changed
             let engineLoaded = await engine.isLoaded
@@ -175,6 +182,16 @@ final class EmailTriageService {
         \(emailsJSON)
         """
     }
+
+    /// Editable template shown in Settings → Advanced.
+    /// {emails_json} is replaced at runtime with the actual email batch.
+    static let defaultUserPromptTemplate: String = """
+        Triage the following emails from my inbox. \
+        Rank them by priority and suggest an action for each.
+
+        Emails:
+        {emails_json}
+        """
 
     // MARK: - Helpers
 
