@@ -204,30 +204,81 @@ final class EmailTriageService {
             .replacingOccurrences(of: "```", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Find the JSON object boundaries if there's surrounding text
-        if let start = cleaned.firstIndex(of: "{"),
-           let end = cleaned.lastIndex(of: "}") {
-            cleaned = String(cleaned[start...end])
+        // Extract from first '{' to last '}'. If the output was truncated and
+        // no closing '}' exists, take everything from '{' onward and let the
+        // repair step close it.
+        if let start = cleaned.firstIndex(of: "{") {
+            if let end = cleaned.lastIndex(of: "}") {
+                cleaned = String(cleaned[start...end])
+            } else {
+                cleaned = String(cleaned[start...])
+            }
         }
 
         guard let data = cleaned.data(using: .utf8) else {
             throw TriageError.invalidJSON("Could not convert model output to data")
         }
 
-        do {
-            return try JSONDecoder().decode(TriageResult.self, from: data)
-        } catch let decodeError as DecodingError {
-            let detail: String
-            switch decodeError {
-            case .keyNotFound(let key, _):   detail = "Missing key '\(key.stringValue)'"
-            case .typeMismatch(_, let ctx):  detail = "Type mismatch at \(ctx.codingPath.map(\.stringValue).joined(separator: "."))"
-            case .valueNotFound(_, let ctx): detail = "Null value at \(ctx.codingPath.map(\.stringValue).joined(separator: "."))"
-            case .dataCorrupted(let ctx):    detail = "Corrupted: \(ctx.debugDescription)"
-            @unknown default:               detail = decodeError.localizedDescription
+        // First attempt: parse as-is
+        if let result = try? JSONDecoder().decode(TriageResult.self, from: data) {
+            return result
+        }
+
+        // Second attempt: repair truncated JSON by closing unclosed structures
+        let repaired = Self.repairTruncatedJSON(cleaned)
+        appLog("Attempting JSON repair — original \(cleaned.count) chars, repaired \(repaired.count) chars", level: .warning, appState)
+        if let repairedData = repaired.data(using: .utf8),
+           let result = try? JSONDecoder().decode(TriageResult.self, from: repairedData) {
+            appLog("JSON repair succeeded", level: .success, appState)
+            return result
+        }
+
+        // Both attempts failed — surface a useful error
+        let detail = describeJSONError(cleaned)
+        throw TriageError.parseFailed("Parse failed [\(detail)] — raw: \(cleaned.prefix(1000))")
+    }
+
+    /// Close unclosed brackets/braces so a truncated JSON object can be decoded.
+    /// Walks the string tracking structural characters while respecting strings and escapes.
+    nonisolated static func repairTruncatedJSON(_ json: String) -> String {
+        var stack: [Character] = []
+        var inString = false
+        var escaped = false
+
+        for ch in json {
+            if escaped { escaped = false; continue }
+            if ch == "\\" && inString { escaped = true; continue }
+            if ch == "\"" { inString.toggle(); continue }
+            if inString { continue }
+            switch ch {
+            case "{": stack.append("}")
+            case "[": stack.append("]")
+            case "}", "]": if stack.last == ch { stack.removeLast() }
+            default: break
             }
-            throw TriageError.parseFailed("Parse failed [\(detail)] — raw: \(cleaned.prefix(1000))")
+        }
+
+        var result = json
+        if inString { result += "\"" }           // close an open string value
+        result += String(stack.reversed())        // close all open objects/arrays
+        return result
+    }
+
+    private func describeJSONError(_ json: String) -> String {
+        guard let data = json.data(using: .utf8) else { return "not UTF-8" }
+        do {
+            _ = try JSONDecoder().decode(TriageResult.self, from: data)
+            return "no error"
+        } catch let e as DecodingError {
+            switch e {
+            case .keyNotFound(let k, _):   return "Missing key '\(k.stringValue)'"
+            case .typeMismatch(_, let c):  return "Type mismatch at \(c.codingPath.map(\.stringValue).joined(separator: "."))"
+            case .valueNotFound(_, let c): return "Null at \(c.codingPath.map(\.stringValue).joined(separator: "."))"
+            case .dataCorrupted(let c):    return "Corrupted: \(c.debugDescription)"
+            @unknown default:             return e.localizedDescription
+            }
         } catch {
-            throw TriageError.parseFailed("Parse failed: \(error.localizedDescription) — raw: \(cleaned.prefix(1000))")
+            return error.localizedDescription
         }
     }
 
