@@ -104,6 +104,32 @@ struct TriageParsingTests {
         #expect(result.rankedEmails[0].priority == 3)
     }
 
+    // MARK: - Truncation repair tests
+
+    /// Model stopped generating mid-JSON — the outer object and array are never closed.
+    @Test func repairesTruncatedJSON() throws {
+        // Simulates the model stopping after the first email entry, mid-array
+        let truncated = """
+        {
+          "rankedEmails": [
+            { "emailId": "t1", "priority": 1, "reason": "Urgent.", "suggestedAction": "reply_now" },
+            { "emailId": "t2", "priority": 2, "reason": "Review
+        """
+        let result = try EmailTriageService.testParseTriageResult(truncated)
+        // At least the first complete email should survive
+        #expect(result.rankedEmails.count >= 1)
+        #expect(result.rankedEmails[0].emailId == "t1")
+    }
+
+    /// Repair utility correctly closes unclosed braces and brackets.
+    @Test func repairClosesOpenStructures() {
+        let truncated = #"{"rankedEmails": [{"emailId": "x""#
+        let repaired = EmailTriageService.repairTruncatedJSON(truncated)
+        // Must be valid JSON after repair
+        let data = repaired.data(using: .utf8)!
+        #expect((try? JSONSerialization.jsonObject(with: data)) != nil)
+    }
+
     @Test func acceptsAlternateEmailsKey() throws {
         let json = """
         {
