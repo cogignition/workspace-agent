@@ -22,6 +22,13 @@ struct WorkspaceAgentApp: App {
         .windowResizability(.contentSize)
         .defaultPosition(.topTrailing)
 
+        // Activity log window — opened on demand
+        Window("Activity Log", id: "activity-log") {
+            ActivityLogView()
+                .environment(appState)
+        }
+        .defaultPosition(.center)
+
         // Settings
         Settings {
             SettingsView()

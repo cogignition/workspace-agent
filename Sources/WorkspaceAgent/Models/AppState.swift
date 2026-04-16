@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import OSLog
 
 /// Central observable state for the app. Shared across MenuBarExtra, digest panel, and settings.
 @Observable
@@ -17,6 +18,10 @@ final class AppState {
     var digest: EmailDigest?
     var isTriaging: Bool = false
     var lastTriageDate: Date?
+
+    // MARK: - Activity Log
+    var logEntries: [LogEntry] = []
+    private let maxLogEntries = 200
 
     // MARK: - Settings
     var gwsPath: String = "/usr/local/bin/gws" {
@@ -66,6 +71,19 @@ final class AppState {
         self.triageService = EmailTriageService(appState: self, engine: engine)
     }
 
+    // MARK: - Logging
+
+    @MainActor
+    func log(_ message: String, level: LogLevel = .info) {
+        let entry = LogEntry(date: Date(), level: level, message: message)
+        logEntries.append(entry)
+
+        // Keep buffer capped at maxLogEntries, drop oldest
+        if logEntries.count > maxLogEntries {
+            logEntries.removeFirst(logEntries.count - maxLogEntries)
+        }
+    }
+
     // MARK: - Engine Status
 
     enum EngineStatus: Equatable {
@@ -80,4 +98,20 @@ final class AppState {
             return false
         }
     }
+}
+
+// MARK: - Log Entry
+
+struct LogEntry: Identifiable, Sendable {
+    let id: UUID = UUID()
+    let date: Date
+    let level: LogLevel
+    let message: String
+}
+
+enum LogLevel: String, Sendable {
+    case info = "info"
+    case success = "success"
+    case warning = "warning"
+    case error = "error"
 }

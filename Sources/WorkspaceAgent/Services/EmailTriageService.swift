@@ -33,7 +33,10 @@ final class EmailTriageService {
         }
 
         do {
+            appLog("Starting triage…", level: .info, appState)
+
             // Step 1: Fetch emails via gws
+            appLog("Fetching emails via gws…", level: .info, appState)
             let gwsService = GWSService(gwsPath: appState.gwsPath)
             let emails = try await gwsService.fetchRecentEmails(maxResults: appState.maxEmails)
 
@@ -42,6 +45,7 @@ final class EmailTriageService {
                 return
             }
 
+            appLog("Fetched \(emails.count) emails", level: .success, appState)
             appState.emails = emails
 
             // Step 2: Build the prompt
@@ -53,16 +57,20 @@ final class EmailTriageService {
 
             // Step 3: Load model if needed, then run inference
             if !appState.engineStatus.isReady {
+                appLog("Loading model…", level: .info, appState)
                 appState.engineStatus = .loading
                 do {
                     try await engine.loadModel(at: appState.modelPath)
+                    appLog("Model loaded", level: .success, appState)
                     appState.engineStatus = .ready
                 } catch {
                     appState.engineStatus = .error(error.localizedDescription)
+                    appLog(error.localizedDescription, level: .error, appState)
                     throw error
                 }
             }
 
+            appLog("Running inference…", level: .info, appState)
             appState.engineStatus = .generating(progress: "Starting…")
             let timeout = appState.modelUnloadTimeout
 
@@ -79,8 +87,10 @@ final class EmailTriageService {
 
             // Update status based on whether model will stay loaded
             appState.engineStatus = timeout > 0 ? .ready : .idle
+            appLog("Inference complete", level: .success, appState)
 
             // Step 4: Parse the structured response
+            appLog("Raw model output (\(rawResponse.count) chars): \(rawResponse.prefix(800))", level: .info, appState)
             let triageResult = try parseTriageResult(rawResponse)
 
             // Step 5: Merge triage results back into emails and build digest
@@ -103,8 +113,11 @@ final class EmailTriageService {
             appState.digest = digest
             appState.lastTriageDate = Date()
 
+            appLog("Triage complete — \(digest.totalEmails) emails ranked", level: .success, appState)
+
         } catch {
             appState.lastError = error.localizedDescription
+            appLog(error.localizedDescription, level: .error, appState)
         }
     }
 
@@ -203,10 +216,18 @@ final class EmailTriageService {
 
         do {
             return try JSONDecoder().decode(TriageResult.self, from: data)
+        } catch let decodeError as DecodingError {
+            let detail: String
+            switch decodeError {
+            case .keyNotFound(let key, _):   detail = "Missing key '\(key.stringValue)'"
+            case .typeMismatch(_, let ctx):  detail = "Type mismatch at \(ctx.codingPath.map(\.stringValue).joined(separator: "."))"
+            case .valueNotFound(_, let ctx): detail = "Null value at \(ctx.codingPath.map(\.stringValue).joined(separator: "."))"
+            case .dataCorrupted(let ctx):    detail = "Corrupted: \(ctx.debugDescription)"
+            @unknown default:               detail = decodeError.localizedDescription
+            }
+            throw TriageError.parseFailed("Parse failed [\(detail)] — raw: \(cleaned.prefix(1000))")
         } catch {
-            throw TriageError.parseFailed(
-                "Failed to parse triage result: \(error.localizedDescription)\nRaw output: \(rawJSON.prefix(500))"
-            )
+            throw TriageError.parseFailed("Parse failed: \(error.localizedDescription) — raw: \(cleaned.prefix(1000))")
         }
     }
 
