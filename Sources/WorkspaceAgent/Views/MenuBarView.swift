@@ -74,6 +74,12 @@ struct MenuBarView: View {
             }
             .disabled(appState.digest == nil)
 
+            Button {
+                openWindow(id: "activity-log")
+            } label: {
+                Label("Show Activity Log", systemImage: "list.bullet.rectangle")
+            }
+
             Divider()
 
             // Engine status
