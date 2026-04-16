@@ -60,7 +60,7 @@ final class EmailTriageService {
                 appLog("Loading model…", level: .info, appState)
                 appState.engineStatus = .loading
                 do {
-                    try await engine.loadModel(at: appState.modelPath)
+                    try await engine.loadModel(at: appState.modelPath, contextSize: appState.contextSize)
                     appLog("Model loaded", level: .success, appState)
                     appState.engineStatus = .ready
                 } catch {

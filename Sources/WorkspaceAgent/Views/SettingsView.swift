@@ -61,6 +61,19 @@ struct SettingsView: View {
                         .textSelection(.enabled)
                 }
 
+                Section("Context Window") {
+                    Picker("Context size", selection: $state.contextSize) {
+                        Text("4 096 tokens  (fastest, least RAM)").tag(4096)
+                        Text("8 192 tokens  (default)").tag(8192)
+                        Text("16 384 tokens  (longer batches)").tag(16384)
+                        Text("32 768 tokens  (large inbox)").tag(32768)
+                    }
+                    Text("Larger context lets the model see more emails at once and reduces truncation, at the cost of extra RAM. Reload the model after changing this.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 Section("Model Memory") {
                     Picker("Keep loaded for", selection: $state.modelUnloadTimeout) {
                         Text("Unload immediately").tag(TimeInterval(0))

@@ -21,7 +21,7 @@ actor InferenceEngine {
 
     /// Load the GGUF model from disk into memory.
     /// On an M3 Pro 36GB, Gemma 4 12B Q8 takes ~12GB and loads in ~15 seconds.
-    func loadModel(at path: String) async throws {
+    func loadModel(at path: String, contextSize: Int = 8192) async throws {
         // Cancel any pending unload — we're loading fresh
         unloadTask?.cancel()
         unloadTask = nil
@@ -41,7 +41,7 @@ actor InferenceEngine {
             let llmClient = try await LocalLLMClient.llama(
                 url: modelURL,
                 parameter: .init(
-                    context: 8192,       // Gemma 4 supports up to 128K but 8K is plenty for email triage
+                    context: contextSize,
                     temperature: 0.3,    // Low temperature for structured output
                     topK: 40,
                     topP: 0.9,
